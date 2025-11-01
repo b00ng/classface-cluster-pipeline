@@ -205,6 +205,29 @@ def cluster_embeddings(embeddings: np.ndarray, image_ids: List[int],
                 merged_clusters.append(cluster.copy())
     # Filter out empty entries
     merged_clusters = [c for c in merged_clusters if c]
+
+    # Final centroid-based consolidation:
+    # greedily merge any pair of clusters whose centroids exceed merge_threshold.
+    # This helps when a single identity was split into two sizable clusters.
+    if len(merged_clusters) > 1:
+        changed = True
+        while changed:
+            changed = False
+            # recompute centroids each round
+            cents = []
+            for cl in merged_clusters:
+                v = embeddings[cl].mean(axis=0)
+                v = v / (np.linalg.norm(v) + 1e-9)
+                cents.append(v)
+            C = np.stack(cents)
+            sims = C @ C.T
+            np.fill_diagonal(sims, -1.0)  # ignore self
+            i, j = divmod(int(np.argmax(sims)), sims.shape[1])
+            if sims[i, j] >= merge_threshold:
+                # merge j into i
+                merged_clusters[i].extend(merged_clusters[j])
+                del merged_clusters[j]
+                changed = True
     return merged_clusters
 
 
