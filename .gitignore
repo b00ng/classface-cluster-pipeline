@@ -71,6 +71,16 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+.venv/
+.env/
+
+# Local run outputs and temporary image folders
+run_output*/
+tmp_*/
+
+# Local artifacts from dev/testing
+test.sqlite
+thumbz.jpg
 
 # IDEs
 .idea/
