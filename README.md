@@ -58,6 +58,33 @@ classface --ui \
 Note for WSL/Windows environments: the album stage copies original images into the student
 folders (hardlinks are avoided for cross-filesystem compatibility). Ensure the output root
 is writable from your shell.
+
+## GPU setup (optional but recommended)
+
+The pipeline automatically uses GPU if available via ONNX Runtime. If it falls back to CPU
+and you have an NVIDIA GPU, install the CUDA build of ONNX Runtime and verify providers:
+
+1) Install GPU build (and remove CPU build if present):
+
+```bash
+pip uninstall -y onnxruntime
+pip install onnxruntime-gpu
+```
+
+2) Ensure NVIDIA drivers and CUDA runtime are installed for your platform. On WSL2, install
+the Windows NVIDIA driver with WSL support and confirm `nvidia-smi` works inside WSL.
+
+3) Verify providers:
+
+```bash
+python - <<'PY'
+import onnxruntime as ort
+print(ort.get_available_providers())
+PY
+```
+
+You should see `['CUDAExecutionProvider', 'CPUExecutionProvider']`. If not, the CLI will print a
+hint on how to enable GPU and continue on CPU.
 ```
 
 ## Repository layout
