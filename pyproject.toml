@@ -1,0 +1,35 @@
+[project]
+name = "classface_cluster"
+version = "0.1.0"
+description = "Pipeline for clustering student photos into identities and generating albums"
+authors = [ { name="OpenAI Assistant" } ]
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+
+# Core dependencies for running the pipeline.  Some packages (e.g. onnxruntime-gpu, faiss-cpu,
+# hdbscan, gradio) are optional and can be installed based on your environment.  They are
+# declared here without strict pinning to allow flexibility when installing on different
+# architectures and CUDA versions.
+dependencies = [
+    "insightface>=0.7.3",   # face detection and embedding models
+    "opencv-python>=4.5.0", # image loading and processing
+    "pillow>=9.0",          # image manipulation and EXIF reading
+    "faiss-cpu>=1.7.0",     # approximate nearest neighbour search
+    "hdbscan>=0.8.0",       # density based clustering (optional)
+    "pyarrow>=8.0",         # Parquet IO
+    "sqlalchemy>=2.0",      # database abstraction layer
+    "gradio>=3.0",          # web UI for run history
+    "tqdm>=4.60",           # progress bars
+    "imagehash>=4.3",       # perceptual hashing for duplicate detection
+]
+
+[project.optional-dependencies]
+adaface = ["adaface-pytorch>=1.0"] # install for AdaFace embedding option
+
+[project.scripts]
+classface = "classface_cluster.cli:main"
+
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
