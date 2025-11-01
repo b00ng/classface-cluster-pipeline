@@ -42,7 +42,8 @@ class RunConfig:
         contain multiple ``part-*.parquet`` files if the run is resumed.
     model_name: str
         Name of the embedding model.  Supported values include
-        ``"iresnet100"`` (the default) and ``"adaface"``.  See
+        ``"iresnet100"`` (the default), ``"antelopev2"`` (an InsightFace
+        model package), and ``"adaface"``.  See
         :mod:`classface_cluster.embedders` for details.
     adaface_weights: Optional[Path]
         Optional path to a custom weight file when using AdaFace.  Ignored
@@ -141,7 +142,7 @@ def parse_args(argv: Optional[list[str]] = None) -> RunConfig:
     parser.add_argument("--embeddings-dir", dest="embeddings_dir", type=Path, required=False,
                         help="Directory to store Parquet embedding parts per run")
     parser.add_argument("--model", dest="model_name", type=str, default="iresnet100",
-                        choices=["iresnet100", "adaface"],
+                        choices=["iresnet100", "antelopev2", "adaface"],
                         help="Embedding model to use")
     parser.add_argument("--adaface-weights", dest="adaface_weights", type=Path, required=False,
                         help="Path to custom AdaFace weight file")

@@ -7,7 +7,7 @@ Given a folder full of photographs spanning multiple school years, the pipeline 
 
 Key features include:
 
-* **InsightFace/AdaFace embeddings** – choose from multiple models (e.g. iResNet100 glint360k or AdaFace) via a command‑line flag.
+* **InsightFace/AdaFace embeddings** – choose from multiple models (e.g. iResNet100 glint360k, InsightFace package `antelopev2`, or AdaFace) via a command‑line flag.
 * **SQLite tracking** – every run is recorded in a central database with metadata (input/output paths, parameters, face counts, runtime, etc.).
 * **Parquet storage** – each run’s face embeddings are saved as Parquet parts to enable incremental resumes.
 * **Resume support** – interrupted runs can be continued later; only new images are processed and embeddings appended.
@@ -106,3 +106,13 @@ classface_cluster/
 ```
 
 Each module has detailed docstrings and is designed to be reusable.  Feel free to inspect individual files for more implementation details.
+You can also select the InsightFace `antelopev2` package:
+
+```bash
+classface \
+  --input /path/to/photos \
+  --output /path/to/output_root \
+  --db /path/to/classface_runs.sqlite \
+  --embeddings-dir /path/to/embeddings \
+  --model antelopev2
+```
