@@ -45,7 +45,8 @@ class InsightFaceEmbedder(Embedder):
     """
     def __init__(self, model_name: str = "iresnet100", min_face_size: int = 80, use_gpu: bool = True) -> None:
         from insightface.app import FaceAnalysis
-        # Map our model name to InsightFace's model
+        import sys
+        # Map our model name to InsightFace's model packages
         name_map = {
             "iresnet100": "buffalo_l",
         }
@@ -54,16 +55,34 @@ class InsightFaceEmbedder(Embedder):
         providers = []
         if use_gpu:
             try:
-                import onnxruntime
-                # Check if CUDAExecutionProvider is available
+                import onnxruntime  # noqa: F401
                 providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
             except Exception:
                 providers = ["CPUExecutionProvider"]
         else:
             providers = ["CPUExecutionProvider"]
-        self.app = FaceAnalysis(name=pkg, providers=providers)
-        # Determine detection resolution; larger sizes yield better quality
-        self.app.prepare(ctx_id=0 if use_gpu else -1, det_size=(640, 640))
+
+        # Construct FaceAnalysis and prepare; fall back if some InsightFace packages
+        # (e.g. antelopev2 on certain installs) fail to load bundled detection.
+        try:
+            self.app = FaceAnalysis(name=pkg, providers=providers)
+            self.app.prepare(ctx_id=0 if use_gpu else -1, det_size=(640, 640))
+        except AssertionError as e:
+            # Known issue: some InsightFace packages may not include detection models
+            # depending on version/provider availability. Fallback to buffalo_l which
+            # bundles a compatible detector+recognizer so the pipeline can proceed.
+            if str(pkg).lower() == "antelopev2":
+                print(
+                    "Warning: InsightFace package 'antelopev2' failed to load detection. "
+                    "Falling back to 'buffalo_l' (iResNet100 glint360k).\n"
+                    "To use antelopev2, ensure your InsightFace version is >= 0.7 and "
+                    "that onnxruntime (GPU if available) is correctly installed.",
+                    file=sys.stderr,
+                )
+                self.app = FaceAnalysis(name="buffalo_l", providers=providers)
+                self.app.prepare(ctx_id=0 if use_gpu else -1, det_size=(640, 640))
+            else:
+                raise
         self.min_face_size = min_face_size
 
     def extract_faces(self, img: np.ndarray) -> List[Dict[str, Any]]:
