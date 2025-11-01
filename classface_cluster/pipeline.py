@@ -45,7 +45,7 @@ def run_pipeline(config: RunConfig) -> None:
     """
     # Initialise or connect to the database
     engine = init_db(config.db_path)
-    with engine.begin() as conn:
+    with engine.connect() as conn:
         if config.extra.get("resume_run"):
             run_id = int(config.extra["resume_run"])
             run_record = get_run(conn, run_id)
@@ -176,6 +176,9 @@ def run_pipeline(config: RunConfig) -> None:
                 # Write embeddings part to Parquet
                 write_embedding_part(Path(config.embeddings_dir), run_id, emb_records)
         except Exception as exc:
+            # Roll back any pending transaction before updating status
+            if conn.in_transaction():
+                conn.rollback()
             # Mark run as interrupted and store exception
             update_run_status(conn, run_id, "interrupted", notes=str(exc))
             traceback.print_exc()
