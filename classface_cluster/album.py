@@ -13,7 +13,7 @@ from __future__ import annotations
 import html
 import shutil
 from pathlib import Path
-from typing import Dict, List, Iterable, Tuple
+from typing import Dict, List, Iterable, Tuple, Optional
 
 from datetime import datetime
 
@@ -61,51 +61,118 @@ def build_album(run_id: int, output_root: Path, cluster_map: Dict[str, List[int]
     # Directory for thumbnails
     thumbs_dir = run_dir / "thumbnails"
     thumbs_dir.mkdir(exist_ok=True)
-    # Build thumbnails list: (src, dst)
+    # Prepare lookup tables for images and derived filenames
+    image_lookup = {int(img["id"]): img for img in images_records}
+    # Canonicalise images by content hash when available, otherwise by path
+    canonical_key_to_id: Dict[str, int] = {}
+    canonical_map: Dict[int, int] = {}
+    canonical_lookup: Dict[int, Dict[str, any]] = {}
+    for img_id, img in image_lookup.items():
+        phash = img.get("phash")
+        if phash:
+            key = f"phash:{str(phash).lower()}"
+        else:
+            path_obj = Path(img["path"])
+            try:
+                path_key = str(path_obj.resolve())
+            except Exception:
+                path_key = str(path_obj)
+            key = f"path:{path_key.lower()}"
+        if key not in canonical_key_to_id:
+            canonical_key_to_id[key] = img_id
+            canonical_lookup[img_id] = img
+            canonical_map[img_id] = img_id
+        else:
+            canonical_id = canonical_key_to_id[key]
+            canonical_map[img_id] = canonical_id
+    file_name_map: Dict[int, str] = {}
+    thumb_name_map: Dict[int, str] = {}
     thumb_pairs = []
-    for img in images_records:
+    for img_id, img in canonical_lookup.items():
         src = Path(img["path"])
-        dst = thumbs_dir / (src.name + ".jpg")
+        unique_name = f"{img_id:06d}_{src.name}"
+        thumb_name = unique_name + ".jpg"
+        file_name_map[img_id] = unique_name
+        thumb_name_map[img_id] = thumb_name
+        dst = thumbs_dir / thumb_name
         thumb_pairs.append((src, dst))
-    build_thumbnails(thumb_pairs, max_size=thumbs_size, workers=thumbs_workers, regen=thumb_regen)
+    # Optional housekeeping: clear old thumbnails to prevent stale duplicates
+    try:
+        for p in thumbs_dir.iterdir():
+            if p.is_file():
+                p.unlink()
+    except Exception:
+        pass
+    build_thumbnails(thumb_pairs, max_size=thumbs_size, workers=thumbs_workers, regen=True)
+    # Remove directories for labels that no longer exist (stale)
+    try:
+        existing_labels = {p.name for p in run_dir.iterdir() if p.is_dir() and p.name != "thumbnails"}
+        target_labels = set(cluster_map.keys())
+        for stale in existing_labels - target_labels:
+            shutil.rmtree(run_dir / stale, ignore_errors=True)
+    except Exception:
+        pass
     # Build student directories and per‑student index
     student_links = []
     for label, face_indices in cluster_map.items():
         # Determine all unique image IDs for this cluster
-        img_ids = sorted({faces_records[i]["image_id"] for i in face_indices}, key=lambda i: images_records[i]["timestamp"])
-        if not img_ids:
+        canonical_ids = sorted(
+            {
+                canonical_map.get(faces_records[i]["image_id"], faces_records[i]["image_id"])
+                for i in face_indices
+            },
+            key=lambda img_id: canonical_lookup.get(img_id, image_lookup[img_id])["timestamp"],
+        )
+        if not canonical_ids:
             continue
         student_dir = run_dir / label
+        # Clean previous contents for this student to remove stale duplicates
+        if student_dir.exists():
+            try:
+                for item in student_dir.iterdir():
+                    if item.is_dir():
+                        shutil.rmtree(item, ignore_errors=True)
+                    else:
+                        try:
+                            item.unlink()
+                        except Exception:
+                            pass
+            except Exception:
+                pass
         student_dir.mkdir(parents=True, exist_ok=True)
         # Copy images into academic year subfolders and collect HTML entries
         entries: List[str] = []
-        for img_id in img_ids:
-            img_rec = images_records[img_id]
+        first_img_id: Optional[int] = None
+        for img_id in canonical_ids:
+            img_rec = canonical_lookup.get(img_id, image_lookup[img_id])
             img_path = Path(img_rec["path"])
             ts = img_rec["timestamp"]
             year_folder_name = _academic_year(ts, start_month)
             dest_folder = student_dir / year_folder_name
             dest_folder.mkdir(parents=True, exist_ok=True)
-            dest_path = dest_folder / img_path.name
-            # Create hardlink if possible, otherwise copy
-            try:
-                if not dest_path.exists():
-                    # Try to create a hard link; fall back to copying
-                    try:
-                        dest_path.hardlink_to(img_path)
-                    except Exception:
-                        shutil.copy2(img_path, dest_path)
-            except Exception:
-                # Fallback to copying on any error
+            dest_filename = file_name_map[img_id]
+            dest_path = dest_folder / dest_filename
+            # Always copy (hardlinks can fail across filesystems/mounts)
+            if not dest_path.exists():
                 try:
                     shutil.copy2(img_path, dest_path)
                 except Exception:
-                    pass
+                    try:
+                        shutil.copyfile(img_path, dest_path)
+                    except Exception:
+                        # As a last resort, skip this file
+                        continue
             # Thumbnail path relative to run_dir
-            thumb_name = img_path.name + ".jpg"
+            thumb_name = thumb_name_map[img_id]
             thumb_rel = f"thumbnails/{thumb_name}"
-            entry = f'<a href="{label}/{year_folder_name}/{html.escape(img_path.name)}"><img src="../{thumb_rel}" alt="{html.escape(img_path.name)}" loading="lazy" /></a>'
+            entry = (
+                f'<a href="{html.escape(year_folder_name)}/{html.escape(dest_filename)}">'
+                f'<img src="../{html.escape(thumb_rel)}" alt="{html.escape(img_path.name)}" loading="lazy" />'
+                "</a>"
+            )
             entries.append(entry)
+            if first_img_id is None:
+                first_img_id = img_id
         # Write per‑student HTML
         student_index = student_dir / "index.html"
         with student_index.open("w", encoding="utf-8") as fh:
@@ -117,8 +184,9 @@ def build_album(run_id: int, output_root: Path, cluster_map: Dict[str, List[int]
             fh.write("</div>\n")
             fh.write("</body></html>")
         # Determine sample thumbnail (first image)
-        sample_thumb = Path(img_rec["path"]).name + ".jpg"
-        student_links.append((label, len(img_ids), sample_thumb))
+        sample_img_id = first_img_id if first_img_id is not None else canonical_ids[0]
+        sample_thumb = thumb_name_map[sample_img_id]
+        student_links.append((label, len(canonical_ids), sample_thumb))
     # Write top‑level index
     index_path = run_dir / "index.html"
     with index_path.open("w", encoding="utf-8") as fh:

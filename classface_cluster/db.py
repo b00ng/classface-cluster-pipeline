@@ -23,7 +23,7 @@ from sqlalchemy import (
     ForeignKey, create_engine, select, insert, update, text
 )
 from sqlalchemy.engine import Engine, Connection
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import SQLAlchemyError, OperationalError
 
 
 def _make_metadata() -> MetaData:
@@ -108,6 +108,40 @@ def init_db(db_path: Path) -> Engine:
     metadata = _make_metadata()
     metadata.create_all(engine)
     return engine
+
+
+def _bulk_insert_with_ids(conn: Connection, table: Table, rows: List[Dict[str, Any]]) -> List[int]:
+    """Insert many rows and return their primary keys.
+
+    Uses ``INSERT ... RETURNING`` when available, otherwise falls back to
+    row-by-row inserts to remain compatible with older SQLite versions.
+    """
+    if not rows:
+        return []
+    stmt = insert(table)
+    try:
+        result = conn.execute(stmt.returning(table.c.id), rows)
+        ids = [int(pk) for pk in result.scalars()]
+        conn.commit()
+        return ids
+    except OperationalError as exc:
+        # RETURNING not supported on this SQLite build; fall back to per-row inserts
+        if conn.in_transaction():
+            conn.rollback()
+        message = str(exc).upper()
+        if "RETURNING" not in message:
+            raise
+    except SQLAlchemyError:
+        if conn.in_transaction():
+            conn.rollback()
+        raise
+
+    inserted_ids: List[int] = []
+    for row in rows:
+        single_result = conn.execute(insert(table).values(**row))
+        inserted_ids.append(int(single_result.inserted_primary_key[0]))
+    conn.commit()
+    return inserted_ids
 
 
 def record_run_start(conn: Connection, input_dir: Path, output_root: Path, embeddings_dir: Path,
@@ -200,10 +234,8 @@ def insert_images(conn: Connection, run_id: int, image_records: Iterable[Dict[st
         Primary keys of inserted rows in order.
     """
     images_table = _make_metadata().tables["images"]
-    inserted = conn.execute(insert(images_table), [dict(run_id=run_id, **rec) for rec in image_records])
-    conn.commit()
-    # inserted.inserted_primary_key_rows returns tuples of primary keys
-    return [int(row[0]) for row in inserted.inserted_primary_key_rows]
+    rows = [dict(run_id=run_id, **rec) for rec in image_records]
+    return _bulk_insert_with_ids(conn, images_table, rows)
 
 
 def insert_faces(conn: Connection, run_id: int, face_records: Iterable[Dict[str, Any]]) -> List[int]:
@@ -214,9 +246,8 @@ def insert_faces(conn: Connection, run_id: int, face_records: Iterable[Dict[str,
     as detection score and pose angles may be supplied.
     """
     faces_table = _make_metadata().tables["faces"]
-    inserted = conn.execute(insert(faces_table), [dict(run_id=run_id, **rec) for rec in face_records])
-    conn.commit()
-    return [int(row[0]) for row in inserted.inserted_primary_key_rows]
+    rows = [dict(run_id=run_id, **rec) for rec in face_records]
+    return _bulk_insert_with_ids(conn, faces_table, rows)
 
 
 def insert_clusters(conn: Connection, run_id: int, cluster_records: Iterable[Dict[str, Any]]) -> List[int]:
@@ -226,9 +257,8 @@ def insert_clusters(conn: Connection, run_id: int, cluster_records: Iterable[Dic
     ``student_name``, ``centroid`` (list) and ``sample_face_id``.
     """
     clusters_table = _make_metadata().tables["clusters"]
-    inserted = conn.execute(insert(clusters_table), [dict(run_id=run_id, **rec) for rec in cluster_records])
-    conn.commit()
-    return [int(row[0]) for row in inserted.inserted_primary_key_rows]
+    rows = [dict(run_id=run_id, **rec) for rec in cluster_records]
+    return _bulk_insert_with_ids(conn, clusters_table, rows)
 
 
 def get_run(conn: Connection, run_id: int) -> Optional[Dict[str, Any]]:

@@ -20,7 +20,11 @@ def _generate_thumbnail(src: Path, dst: Path, max_size: int) -> None:
     """Generate a thumbnail JPEG for a single image."""
     try:
         with Image.open(src) as im:
-            im.thumbnail((max_size, max_size), Image.ANTIALIAS)
+            try:
+                resample = Image.Resampling.LANCZOS  # Pillow >= 9.1
+            except AttributeError:  # Pillow < 9.1
+                resample = Image.ANTIALIAS  # type: ignore[attr-defined]
+            im.thumbnail((max_size, max_size), resample)
             dst.parent.mkdir(parents=True, exist_ok=True)
             im.save(dst, format="JPEG", quality=85, optimize=True, progressive=True)
     except Exception:

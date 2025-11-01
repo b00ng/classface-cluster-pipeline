@@ -32,7 +32,11 @@ classface \
   --output /path/to/output_root \
   --db /path/to/classface_runs.sqlite \
   --embeddings-dir /path/to/embeddings \
-  --model iresnet100
+  --model iresnet100 \
+  --use-phash            # optional, deduplicate identical photos by perceptual hash
+
+# If you re-run a job and want thumbnails rebuilt, add:
+#   --thumb-regen
 ```
 
 Launch the Gradio UI to manage historical runs:
@@ -41,6 +45,19 @@ Launch the Gradio UI to manage historical runs:
 classface --ui \
   --db /path/to/classface_runs.sqlite \
   --embeddings-dir /path/to/embeddings
+
+## Duplicates and rebuilds
+
+- Content duplicates: pass `--use-phash` to compute a perceptual hash per image and collapse
+  visually identical files (even if they have different filenames). This reduces repeated
+  copies in each student folder.
+- Album rebuilds: if you change clustering parameters or re-run the same input, use
+  `--thumb-regen` to force regeneration of thumbnails. The album builder also cleans per-student
+  folders to remove stale files from previous runs.
+
+Note for WSL/Windows environments: the album stage copies original images into the student
+folders (hardlinks are avoided for cross-filesystem compatibility). Ensure the output root
+is writable from your shell.
 ```
 
 ## Repository layout

@@ -231,8 +231,11 @@ def run_pipeline(config: RunConfig) -> None:
         conn.commit()
         insert_clusters(conn, run_id, cluster_records)
         # Build album
-        # Fetch images_records list for album: we need all images from DB not just newly processed
-        rows = conn.execute(text("SELECT id, path, timestamp FROM images WHERE run_id = :rid"), {"rid": run_id}).mappings().all()
+        # Fetch images_records list for album: include phash for content-dedup if available
+        rows = conn.execute(
+            text("SELECT id, path, timestamp, phash FROM images WHERE run_id = :rid"),
+            {"rid": run_id},
+        ).mappings().all()
         all_images_records = [dict(r) for r in rows]
         # faces_records for album: list of dict for each face (we need image_id and timestamp)
         # Build list in same order as embedding DataFrame (emb_df) indices

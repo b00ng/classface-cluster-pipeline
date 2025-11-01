@@ -181,23 +181,27 @@ def cluster_embeddings(embeddings: np.ndarray, image_ids: List[int],
     # Determine which clusters are small
     large_mask = np.array([len(c) >= min_cluster_size for c in cluster_list])
     merged_clusters: List[List[int]] = []
+    cluster_to_output: Dict[int, int] = {}
+    large_indices_all = list(np.nonzero(large_mask)[0])
     for i, cluster in enumerate(cluster_list):
         if large_mask[i]:
+            cluster_to_output[i] = len(merged_clusters)
             merged_clusters.append(cluster.copy())
         else:
             # Small cluster: try to merge with the most similar large cluster
-            if not np.any(large_mask):
-                # No large cluster exists; keep as unknown
+            available_targets = [idx for idx in large_indices_all if idx in cluster_to_output]
+            if not available_targets:
+                # No processed large cluster exists; keep as standalone
+                cluster_to_output[i] = len(merged_clusters)
                 merged_clusters.append(cluster.copy())
                 continue
-            sims = centroids[large_mask] @ centroids[i]
-            best_idx = int(np.argmax(sims))
-            if sims[best_idx] >= merge_threshold:
-                # Map index among large clusters to overall index
-                large_indices = [j for j, m in enumerate(large_mask) if m]
-                target = large_indices[best_idx]
-                merged_clusters[target].extend(cluster)
+            sims = [float(centroids[idx] @ centroids[i]) for idx in available_targets]
+            best_pos = int(np.argmax(sims))
+            if sims[best_pos] >= merge_threshold:
+                target_cluster_idx = cluster_to_output[available_targets[best_pos]]
+                merged_clusters[target_cluster_idx].extend(cluster)
             else:
+                cluster_to_output[i] = len(merged_clusters)
                 merged_clusters.append(cluster.copy())
     # Filter out empty entries
     merged_clusters = [c for c in merged_clusters if c]
