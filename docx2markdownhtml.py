@@ -1,4 +1,4 @@
-# === FIXED VERSION - Multi-Level Comments with Tree Structure ===
+# === FULLY FIXED VERSION - Multi-Level Comments with Tree Structure ===
 
 # 1. Install packages
 !pip install -q 'markitdown[all]' python-docx lxml markdown mammoth
@@ -186,33 +186,6 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             color: white;
         }
         tr:nth-child(even) { background-color: #f9f9f9; }
-        .comment-box {
-            background: #fff3cd;
-            border-left: 4px solid #ffc107;
-            padding: 15px;
-            margin: 15px 0;
-            border-radius: 4px;
-        }
-        .comment-reply-1 {
-            margin-left: 30px;
-            background: #e3f2fd;
-            border-left: 4px solid #2196f3;
-            padding: 12px;
-            margin-top: 10px;
-            border-radius: 4px;
-        }
-        .comment-reply-2 {
-            margin-left: 60px;
-            background: #f3e5f5;
-            border-left: 4px solid #9c27b0;
-            padding: 10px;
-            margin-top: 8px;
-            border-radius: 4px;
-        }
-        .comment-author {
-            font-weight: bold;
-            color: #e67e22;
-        }
         sup { color: #e74c3c; font-weight: bold; }
         hr { border: none; border-top: 2px solid #ecf0f1; margin: 30px 0; }
     </style>
@@ -295,36 +268,43 @@ class DocxMarkdownParser:
                 except:
                     pass
             
-            # Use appropriate header level based on depth (h3 for root, h4 for level 1, h5 for deeper)
-            header_level = min(3 + level, 5)
-            header_prefix = "#" * header_level
+            # Build the output with proper formatting
+            output = ""
             
-            # Format comment header
+            # Format comment header based on level
             if level == 0:
-                output = f"{header_prefix} Comment [{comment_id}]\n\n"
+                # Root comment - use h3
+                output += f"### Comment [{comment_id}]\n\n"
+                output += f"**Author**: {authors.get(comment_id, 'Unknown')}\n\n"
+                
+                if date_str:
+                    output += f"**Date**: {date_str}\n\n"
+                
+                # Show referenced text for root comments
+                if comment_id in commented_text and commented_text[comment_id].strip():
+                    output += f"**Referenced Text**: \"{commented_text[comment_id]}\"\n\n"
+                
+                output += f"**Comment**: {comments[comment_id]}\n\n"
+                
             else:
-                parent_id = thread_dict.get(comment_id)
-                output = f"{header_prefix} ↳ Reply to Comment [{parent_id}] (ID: {comment_id})\n\n"
-            
-            # Add blockquote for visual indentation of replies
-            quote_prefix = "> " * level
-            
-            output += f"{quote_prefix}**Author**: {authors.get(comment_id, 'Unknown')}\n\n"
-            
-            if date_str:
-                output += f"{quote_prefix}**Date**: {date_str}\n\n"
-            
-            # Only show referenced text for root comments
-            if level == 0 and comment_id in commented_text and commented_text[comment_id].strip():
-                output += f"{quote_prefix}**Referenced Text**: \"{commented_text[comment_id]}\"\n\n"
-            
-            output += f"{quote_prefix}**Comment**: {comments[comment_id]}\n\n"
+                # Reply comment - use bullet points with indentation
+                indent = "  " * (level - 1)
+                parent_id = thread_dict.get(comment_id, "Unknown")
+                
+                output += f"{indent}- **Reply to [{parent_id}]** (Comment ID: {comment_id})\n"
+                output += f"{indent}  - Author: {authors.get(comment_id, 'Unknown')}\n"
+                
+                if date_str:
+                    output += f"{indent}  - Date: {date_str}\n"
+                
+                output += f"{indent}  - Comment: {comments[comment_id]}\n\n"
             
             # Recursively add replies
             if comment_id in comment_tree:
                 for reply_id in sorted(comment_tree[comment_id]):
                     output += format_comment(reply_id, level + 1)
             
+            # Add separator after root comments
             if level == 0:
                 output += "---\n\n"
             
